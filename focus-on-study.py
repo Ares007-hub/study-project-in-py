@@ -87,16 +87,18 @@ def gerar_grafico_evolucao(materia_alvo, df_materia):
     if len(df_materia) < 1:
         return
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Analise de Desempenho Historico: {materia_alvo.upper()}", fontsize=14, fontweight='bold')
+    # Expandimos para 3 gráficos: (1, 3) e aumentamos a largura da figura
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(f"Análise de Desempenho Histórico: {materia_alvo.upper()}", fontsize=14, fontweight='bold')
 
-    # Gráfico 1: Evolução dos Acertos
+    # Gráfico 1: Evolução dos Acertos Geral
     ax1.plot(df_materia['data'], df_materia['acertos'], marker='o', color='#2ca02c', linewidth=2, label='Acertos')
     ax1.axhline(y=7, color='r', linestyle='--', alpha=0.6, label='Meta (70%)')
-    ax1.set_title("Evolucao de Acertos (Max: 10)")
-    ax1.set_xlabel("Data da Sessao")
-    ax1.set_ylabel("Questoes Acertadas")
+    ax1.set_title("Evolução de Acertos (Geral)")
+    ax1.set_xlabel("Data da Sessão")
+    ax1.set_ylabel("Questões Acertadas")
     ax1.set_ylim(-0.5, 10.5)
+    ax1.tick_params(axis='x', rotation=45)
     ax1.grid(True, alpha=0.3)
     ax1.legend()
 
@@ -106,20 +108,41 @@ def gerar_grafico_evolucao(materia_alvo, df_materia):
     df_materia_minutos['min_perdidos'] = df_materia_minutos['tempo_perdido_s'] / 60
 
     x = range(len(df_materia))
-    ax2.bar(x, df_materia_minutos['min_estudados'], width=0.4, label='Tempo Focado (min)', color='#1f77b4', align='center')
-    ax2.bar(x, df_materia_minutos['min_perdidos'], width=0.4, label='Tempo Perdido (min)', color='#d62728', align='edge')
-    ax2.set_title("Tempo Focado vs Distracoes")
-    ax2.set_xlabel("Sessoes (Ordem Cronologica)")
+    ax2.bar(x, df_materia_minutos['min_estudados'], width=0.4, label='Focado (min)', color='#1f77b4', align='center')
+    ax2.bar(x, df_materia_minutos['min_perdidos'], width=0.4, label='Perdido (min)', color='#d62728', align='edge')
+    ax2.set_title("Tempo Focado vs Distrações")
+    ax2.set_xlabel("Sessões (Ordem Cronológica)")
     ax2.set_ylabel("Minutos")
     ax2.set_xticks(x)
     ax2.grid(True, alpha=0.3)
     ax2.legend()
 
+    # Gráfico 3: Média de Acertos POR ASSUNTO
+    if 'assunto' in df_materia.columns:
+        # Agrupa pelos assuntos e calcula a média de acertos
+        df_assuntos = df_materia.groupby('assunto')['acertos'].mean().reset_index()
+        # Ordena para os piores ficarem embaixo
+        df_assuntos = df_assuntos.sort_values(by='acertos')
+        
+        # Define a cor vermelha se a média for menor que 7 (meta), ou verde se for maior
+        cores = ['#d62728' if v < 7 else '#2ca02c' for v in df_assuntos['acertos']]
+        
+        ax3.barh(df_assuntos['assunto'], df_assuntos['acertos'], color=cores, edgecolor='black', alpha=0.8)
+        ax3.axvline(x=7, color='r', linestyle='--', alpha=0.6, label='Meta (7)')
+        ax3.set_title("Diagnóstico: O que melhorar?")
+        ax3.set_xlabel("Média de Acertos (0 a 10)")
+        ax3.set_xlim(0, 10)
+        ax3.grid(True, alpha=0.3, axis='x')
+        ax3.legend()
+    else:
+        ax3.text(0.5, 0.5, "Sem dados de assuntos ainda.", ha='center', va='center')
+        ax3.set_title("Diagnóstico: O que melhorar?")
+
     plt.tight_layout()
     nome_arquivo = f"performance_{materia_alvo.lower().replace(' ', '_')}.png"
     plt.savefig(nome_arquivo)
     plt.close()
-    print(f"[INFO] Grafico de evolucao atualizado e salvo como: '{nome_arquivo}'")
+    print(f"[INFO] Gráfico de evolução atualizado e salvo como: '{nome_arquivo}'")
 
 # --- DASHBOARD TEXTUAL ---
 def exibir_dashboard(materia_alvo):
@@ -146,12 +169,20 @@ def exibir_dashboard(materia_alvo):
     print(f"Melhor pontuacao historica:  {df_materia['acertos'].max()}")
     print(f"Pior pontuacao historica:    {df_materia['acertos'].min()}")
     
+    # Exibe no terminal os assuntos que precisam de revisão
+    if 'assunto' in df_materia.columns:
+        print("\n" + "-"*15 + " STATUS POR ASSUNTO " + "-"*15)
+        df_assuntos = df_materia.groupby('assunto')['acertos'].mean().reset_index()
+        for _, row in df_assuntos.iterrows():
+            status = "REVISAR" if row['acertos'] < 7 else "DOMINADO"
+            print(f" -> {row['assunto']}: {row['acertos']:.1f}/10.0 [{status}]")
+
     if len(df_materia) > 1:
         ultima_nota = df_materia.iloc[-1]['nota_porcentagem']
         penultima_nota = df_materia.iloc[-2]['nota_porcentagem']
         variacao = ultima_nota - penultima_nota
         sinal = "+" if variacao >= 0 else ""
-        print(f"Evolucao em relacao a ultima aula: {sinal}{variacao:.1f}% de rendimento.")
+        print(f"\nEvolucao em relacao a ultima aula: {sinal}{variacao:.1f}% de rendimento.")
     print("=" * 70 + "\n")
     
     gerar_grafico_evolucao(materia_alvo, df_materia)
@@ -167,8 +198,10 @@ def executar_cronometro():
     materia = input("Qual materia voce vai estudar agora? ").strip().capitalize()
     if not materia:
         materia = "Geral"
+    assunto = input("Qual assunto voce vai estudar hoje? ").strip().capitalize()
+    if not assunto:
+        assunto = "Geral"
         
-    # Mudança aqui: Entrada agora pede minutos inteiros para evitar confusão matemática
     tempo_alvo_minutos = obter_input_float("Quantos MINUTOS de estudo planeja cumprir hoje? (Ex: 60 ou 90): ", minimo=0.5)
     tempo_alvo_segundos = tempo_alvo_minutos * 60
     
@@ -181,11 +214,13 @@ def executar_cronometro():
     tempo_desperdiçado = 0
     distracoes_count = 0
     em_tela_cheia = False
+    meta_atingida = False
     
     last_time = time.time()
     
     try:
-        while tempo_estudado < tempo_alvo_segundos:
+        # Loop agora roda infinitamente até você terminar a aula (seja no popup ou no Ctrl+C)
+        while True:
             time.sleep(0.5)
             agora = time.time()
             decorrido = agora - last_time
@@ -205,20 +240,57 @@ def executar_cronometro():
                     em_tela_cheia = False
                 tempo_desperdiçado += decorrido
             
+            # --- IMPRIME O STATUS ATUALIZADO ANTES DO POPUP PARA GARANTIR OS 100% ---
             min_foco, seg_foco = divmod(int(tempo_estudado), 60)
             min_perda, seg_perda = divmod(int(tempo_desperdiçado), 60)
-            print(f"\rFoco: {min_foco:02d}m{seg_foco:02d}s | Desvios: {distracoes_count} ({min_perda:02d}m{seg_perda:02d}s perdidos) | Progresso: {(tempo_estudado/tempo_alvo_segundos)*100:.1f}%", end="")
+            progresso_visual = min((tempo_estudado / tempo_alvo_segundos) * 100, 100.0) # Trava o visual em 100%
+            print(f"\rFoco: {min_foco:02d}m{seg_foco:02d}s | Desvios: {distracoes_count} ({min_perda:02d}m{seg_perda:02d}s perdidos) | Progresso: {progresso_visual:.1f}%", end="")
+            
+            # --- NOVA LÓGICA DE FIM DO TEMPO ESTIMADO ---
+            if tempo_estudado >= tempo_alvo_segundos and not meta_atingida:
+                
+                # 1. Clica fisicamente no meio da tela para o Windows focar 100% no navegador
+                largura, altura = pyautogui.size()
+                pyautogui.click(largura / 2, altura / 2)
+                time.sleep(0.5)
+                
+                # 2. Segura a tecla 'k' como um humano faria (evita que o navegador ignore o robô)
+                pyautogui.keyDown('k')
+                time.sleep(0.2) # Mantém a tecla abaixada por 200ms
+                pyautogui.keyUp('k')
+                
+                time.sleep(1.0) 
+                
+                print(f"\n\n[{datetime.now().strftime('%H:%M:%S')}] [ALERTA] Tempo planejado atingido! Verificando...")
+                
+                # Exibe um alerta do sistema operacional que fica por cima do navegador e vídeo
+                resposta = pyautogui.confirm(
+                    text='O tempo estimado chegou ao fim! Você concluiu a vídeo aula?',
+                    title='Fim da Sessão Estimada',
+                    buttons=['Sim, acabei', 'Não, ainda estou vendo']
+                )
+                
+                if resposta == 'Sim, acabei':
+                    print("\n[INFO] Aula finalizada no tempo exato.")
+                    break # Sai do loop do cronômetro para ir ao simulado
+                else:
+                    print("\n[INFO] Aula não finalizada. Cronômetro retomado! Pressione Ctrl+C quando acabar.")
+                    meta_atingida = True # Garante que o popup não vai abrir repetidamente
 
     except KeyboardInterrupt:
-        print("\n\n[AVISO] Sessao finalizada pelo usuario.")
+        # Lógica de redução de 5 segundos pela troca de janela do Ctrl+C
+        tempo_estudado = max(0, tempo_estudado - 5) 
+        print(f"\n\n[AVISO] Sessão finalizada pelo usuário (Ctrl+C).")
+        print("[INFO] Foram descontados 5 segundos do tempo de foco referentes à troca de tela.")
     
+    # Após encerrar (seja pelo botão "Sim, acabei" do Popup ou pelo Ctrl+C), o fluxo continua.
     print("\n\n" + "===" * 5 + " SESSAO CONCLUIDA " + "===" * 5)
     finalizar = input("Quer prosseguir para o simulado do NotebookLM? (s/n): ").strip().lower()
     
     if finalizar == 's':
         prompt_notebook_lm = (
             f"Atue como um Professor especialista na materia de '{materia}'. "
-            f"Com base exclusivamente nos documentos que importei no meu NotebookLM, "
+            f"Com base exclusivamente nos documentos que importei no meu NotebookLM, diante o assunto {assunto} "
             f"gere um simulado rigoroso de exatamente 10 questoes ineditas de multipla escolha (A a D) "
             f"para testar meu nivel de retencao de conteudo. Nao de as respostas imediatamente, coloque o gabarito "
             f"comentado apenas no final para eu nao ver antes de responder."
@@ -240,6 +312,7 @@ def executar_cronometro():
         sessao_atual = {
             "data": datetime.now().strftime("%Y-%m-%d"),
             "materia": materia,
+            "assunto": assunto, 
             "tempo_alvo_s": round(tempo_alvo_segundos, 1),
             "tempo_estudado_s": round(tempo_estudado, 1),
             "tempo_perdido_s": round(tempo_desperdiçado, 1),
